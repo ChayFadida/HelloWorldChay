@@ -18,7 +18,7 @@ public class App {
     static class HelloHandler implements HttpHandler {
         @Override
         public void handle(HttpExchange exchange) throws IOException {
-            String response = "Hello World Chay-Techs from PROD!!!!!!";
+            String response = "Hello World Chay-Techs from prod!!!!!!";
             exchange.sendResponseHeaders(200, response.getBytes().length);
             OutputStream os = exchange.getResponseBody();
             os.write(response.getBytes());
