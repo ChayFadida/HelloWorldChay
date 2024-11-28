@@ -1,0 +1,106 @@
+# This YAML pipeline template automates the process of checking out a Git repository, 
+# running tests, incrementing the version of a Java Maven project, 
+# committing the version update, building and packaging the project, 
+# and publishing the build artifacts. The pipeline includes the following steps:
+#
+# 1. **Checkout**: Clone the specified Git repository and checkout the given branch.
+# 2. **Maven Test**: Run tests using Maven, with the option to skip tests set to false.
+# 3. **Publish Test Results**: Publish the test results to the Azure DevOps environment.
+# 4. **Version Increment**: Extract the current version from `pom.xml`, increment the patch version, 
+#    and set the new version as a pipeline variable.
+# 5. **Commit Version Change**: Commit the updated version to the remote repository.
+# 6. **Maven Compile**: Compile the Maven project.
+# 7. **Maven Package**: Package the project without running tests.
+# 8. **Publish Artifacts**: Publish the built artifacts
+
+parameters:
+  - name: work_dir
+    type: string
+  - name: git_repo
+    type: string
+  - name: chosen_branch
+    type: string
+  - name: skip_checkout
+    type: boolean
+  - name: java_project_path
+    default: false
+
+steps:
+- checkout: none
+
+- task: CmdLine@2
+  inputs:
+    script: |
+      echo "##[command] git clone -c http.extraHeader="AUTHORIZATION: bearer $(System.AccessToken)" --branch ${{ parameters.chosen_branch }} --depth 1 https://chayfadida1997@dev.azure.com/chayfadida1997/Interview/_git/${{ parameters.git_repo }} ${{ parameters.work_dir }}"
+      git clone -c http.extraHeader="AUTHORIZATION: bearer $(System.AccessToken)" --branch ${{ parameters.chosen_branch }} --depth 1 https://chayfadida1997@dev.azure.com/chayfadida1997/Interview/_git/${{ parameters.git_repo }} ${{ parameters.work_dir }}
+  displayName: 'Checkout Interview@${{ parameters.chosen_branch }}'
+  condition: and(succeeded(), eq('${{ parameters.skip_checkout }}', false))
+
+- task: Maven@3
+  displayName: 'Maven Test'
+  inputs:
+    mavenPomFile: '${{ parameters.java_project_path }}/pom.xml'
+    goals: 'test'
+    options: '-DskipTests=false'
+
+- task: PublishTestResults@2
+  displayName: 'Publish Test Results'
+  inputs:
+    testResultsFiles: 'target/**/TEST-*.xml'
+    searchFolder: '${{ parameters.java_project_path }}'
+
+- task: CmdLine@2
+  displayName: "Read and Increment Version"
+  name: DetermineVersion
+  inputs:
+    script: |
+      # Extract the current version from pom.xml
+      current_version=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout)
+      
+      # Split the version into major, minor, and patch components
+      IFS='.' read -r major minor patch <<< "$current_version"
+
+      # Increment the patch version by 1
+      new_patch=$((patch + 1))
+
+      # Combine the new version
+      new_version="$major.$minor.$new_patch"
+
+      # Set the new version as a pipeline variable
+      echo "##vso[task.setvariable variable=NewVersion;isOutput=true]$new_version"
+      echo "New version to be set: $new_version"
+
+      # Verify the new version (commit it in the pom.xml)
+      mvn versions:set -DnewVersion=$new_version
+    workingDirectory: '${{ parameters.java_project_path }}'
+
+- task: CmdLine@2
+  displayName: 'Commit Version Change to Remote'
+  inputs:
+    script: | 
+      git config user.email "chayfadida1997@gmail.com"
+      git config user.name "Yechezkel Chay Fadida"
+      git add pom.xml pom.xml.versionsBackup
+      git commit -m "Bump version to $(NewVersion)"
+      git push origin ${{ parameters.chosen_branch }}
+    workingDirectory: '${{ parameters.java_project_path }}'
+
+- task: Maven@3
+  displayName: 'Maven Compile'
+  inputs:
+    mavenPomFile: '${{ parameters.java_project_path }}/pom.xml'
+    goals: 'compile'
+
+- task: Maven@3
+  displayName: 'Maven Package'
+  inputs:
+    mavenPomFile: '${{ parameters.java_project_path }}/pom.xml'
+    goals: 'package'
+    options: '-DskipTests'
+
+- task: PublishBuildArtifacts@1
+  displayName: 'Publish Artifacts'
+  inputs:
+    pathToPublish: '${{ parameters.java_project_path }}/target'
+    artifactName: 'drop'
+    publishLocation: 'Container'

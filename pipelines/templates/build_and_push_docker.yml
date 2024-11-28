@@ -1,0 +1,81 @@
+# Azure DevOps Template Overview:
+# This template automates the process of:
+# 1. Cloning the Git repository from Azure DevOps.
+# 2. Building a Docker image from a Dockerfile in the repository.
+# 3. Pushing the Docker image to Docker Hub.
+# 4. Running the Docker image after it has been built and pushed.
+#
+# The template defines the following parameters:
+# - work_dir: The working directory where the repository will be cloned.
+# - git_repo: The name of the Git repository to clone.
+# - chosen_branch: The specific branch of the repository to clone.
+# - dockerhub_project: The Docker Hub project where the image will be pushed.
+# - image_name: The name of the Docker image.
+# - tag_name: The tag for the Docker image, typically the version or build identifier.
+# - dockefile_path: The path to the Dockerfile in the repository.
+# - skip_checkout: A boolean flag to skip the Git checkout step if set to true (default is false).
+#
+# The tasks executed in the template:
+# 1. Git clone: Clones the repository from Azure DevOps using the specified branch.
+# 2. Docker build: Builds the Docker image using the specified Dockerfile.
+# 3. Docker push: Pushes the built image to Docker Hub.
+# 4. Docker run: Runs the Docker image to verify the build.
+
+parameters:
+  - name: work_dir
+    type: string
+  - name: git_repo
+    type: string
+  - name: chosen_branch
+    type: string
+  - name: dockerhub_project
+    type: string
+  - name: image_name
+    type: string
+  - name: tag_name
+    type: string
+  - name: dockefile_path
+    type: string
+  - name: skip_checkout
+    type: boolean
+    default: false
+
+steps:
+- checkout: none
+
+- task: CmdLine@2
+  inputs:
+    script: |
+      echo "##[command] git clone -c http.extraHeader="AUTHORIZATION: bearer $(System.AccessToken)" --branch ${{ parameters.chosen_branch }} --depth 1 https://chayfadida1997@dev.azure.com/chayfadida1997/Interview/_git/${{ parameters.git_repo }} ${{ parameters.work_dir }}"
+      git clone -c http.extraHeader="AUTHORIZATION: bearer $(System.AccessToken)" --branch ${{ parameters.chosen_branch }} --depth 1 https://chayfadida1997@dev.azure.com/chayfadida1997/Interview/_git/${{ parameters.git_repo }} ${{ parameters.work_dir }}
+  displayName: 'Checkout Interview@${{ parameters.chosen_branch }}'
+  condition: and(succeeded(), eq('${{ parameters.skip_checkout }}', false))
+
+- task: Docker@2
+  displayName: 'Build Docker Image ${{ parameters.tag_name }}'
+  inputs:
+    command: build
+    dockerfile: ${{ parameters.dockefile_path }}/Dockerfile
+    containerRegistry: dockerHubConnection
+    repository: ${{ parameters.dockerhub_project }}/${{ parameters.image_name }}
+    arguments: --no-cache
+    tags: |
+      ${{ parameters.tag_name }}
+      latest
+
+- task: Docker@2
+  displayName: 'Push Docker Image'
+  inputs:
+    command: push
+    containerRegistry: dockerHubConnection
+    repository: ${{ parameters.dockerhub_project }}/${{ parameters.image_name }}
+    tags: |
+      ${{ parameters.tag_name }}
+      latest
+
+- task: Docker@2
+  displayName: 'Run Docker Image'
+  inputs:
+    command: run
+    containerRegistry: dockerHubConnection
+    arguments: ${{ parameters.dockerhub_project }}/${{ parameters.image_name }}:${{ parameters.tag_name }}

@@ -1,0 +1,69 @@
+# Azure DevOps Pipeline Overview:
+# This pipeline automates the process of:
+# 1. Checking out the code from the Git repository.
+# 2. Running Maven tasks to compile and package the application.
+# 3. Building and pushing a Docker image to Docker Hub.
+#
+# The pipeline is triggered automatically when changes are pushed to the 'main' branch.
+# It consists of the following stages:
+# - Checkout: Clones the repository based on the selected branch.
+# - Maven: Runs Maven tasks to compile and package the Java project.
+# - Docker: Builds a Docker image from the packaged application and pushes it to Docker Hub.
+
+trigger:
+- main
+
+pool: default
+
+variables:
+  chosen_branch: $[ replace(variables['Build.SourceBranch'], 'refs/heads/', '') ]
+  work_dir: $(Pipeline.Workspace)/$(Build.BuildId)
+  git_repo: Interview
+
+stages:
+- stage: Checkout
+  displayName: "Checkout Stage"
+  jobs:
+  - job: CheckoutJob
+    steps:
+    - checkout: none
+    - task: CmdLine@2
+      inputs:
+        script: |
+          echo "##[command] git clone -c http.extraHeader="AUTHORIZATION: bearer $(System.AccessToken)" --branch $(chosen_branch) --depth 1 https://chayfadida1997@dev.azure.com/chayfadida1997/Interview/_git/$(git_repo) $(work_dir)"
+          git clone -c http.extraHeader="AUTHORIZATION: bearer $(System.AccessToken)" --branch $(chosen_branch) --depth 1 https://chayfadida1997@dev.azure.com/chayfadida1997/Interview/_git/$(git_repo) $(work_dir)
+      displayName: 'Checkout Interview@$(parameters.chosen_branch)'
+
+- stage: Maven
+  displayName: "Maven Stage"
+  jobs:
+  - job: MavenJob
+    displayName: "Maven Job"
+    steps:
+    - template: templates/maven_test_compile_package.yml
+      parameters:
+        work_dir: $(work_dir)
+        git_repo: $(git_repo)
+        chosen_branch: $(chosen_branch)
+        skip_checkout: true
+        java_project_path: $(work_dir)/myapp
+
+- stage: Docker
+  dependsOn: Maven
+  displayName: "Docker Stage"
+  jobs:
+  - job: DockerJob
+    displayName: "Docker Job"
+    variables:
+      mavenVersion: $[ stageDependencies.Maven.MavenJob.outputs['DetermineVersion.NewVersion'] ]
+    steps:
+    - template: templates/build_and_push_docker.yml
+      parameters:
+        work_dir: $(work_dir)
+        git_repo: $(git_repo)
+        chosen_branch: $(chosen_branch)
+        dockerhub_project: yechezke
+        image_name: myapp
+        skip_checkout: true
+        tag_name: $(mavenVersion)
+        dockefile_path: $(work_dir)/myapp
